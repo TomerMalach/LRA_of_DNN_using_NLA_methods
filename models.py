@@ -129,3 +129,13 @@ def VGG19Model(input_shape, num_classes):
     model.summary()
 
     return model
+
+
+def MnistDense(input_shape, num_classes):
+    x = Input(name='inputs', shape=input_shape, dtype='float32')
+    o = Flatten()(x)
+    o = Dense(units=2048, name='hidden_layer', activation='sigmoid')(o)
+    o = Dense(units=num_classes, name='output_layer',  activation='softmax')(o)
+    model = Model(inputs=x, outputs=o, name='mnist')
+    model.summary()
+    return model

@@ -35,7 +35,7 @@ def check_sparsity(model):
 
 
 def prune_weights(model, conv_pruning_percent=0.3, fc_pruning_percent=0.7, per_channel=False,
-                  fix_conv_pruning=False, fix_fc_pruning=False):
+                  fix_conv_pruning=False, fix_fc_pruning=False)->Model:
 
     # Prune the weights
 
@@ -376,8 +376,8 @@ def plot_weights_histogram(model):
     plt.show()
 
 
-def lra_per_layer(model, layer_index=0, algorithm='tsvd'):
-
+def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd') -> Model:
+    assert layer_index < len(model.layers), 'ERROR lra_per_layer: given layer index is out of bounds'
     print('---------------- Start Compression with {0} for layer {1}!) ----------------'.format(algorithm, layer_index))
 
     if "Conv" not in type(model.layers[layer_index]).__name__ and \
@@ -398,11 +398,13 @@ def lra_per_layer(model, layer_index=0, algorithm='tsvd'):
 
         k = len(s) - 1
 
-        smat = np.zeros(k, s.dtype)
+        # smat = np.zeros((k,k), s.dtype) # TODO why do we need it?
+        # smat[:k, :k] = np.diag(s[:k])
+        smat = np.diag(s[:k])  # truncation of the lowest singular value
 
-        smat[:k, :k] = np.diag(s[:k])
 
-        weights2d_truncated = np.dot(u, np.dot(smat, vh))
+        weights2d_truncated = np.dot(u, np.dot(smat, vh)) # TODO doesn't make sense, where do we save parameters?
+                                                          # shouldn't
 
         if len(weights[j].shape) > 2:
             weights[j] = weights2d_truncated.reshape(weights[j].shape)
