@@ -378,12 +378,12 @@ def plot_weights_histogram(model):
 
 def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd') -> Model:
     assert layer_index < len(model.layers), 'ERROR lra_per_layer: given layer index is out of bounds'
-    print('---------------- Start Compression with {0} for layer {1}!) ----------------'.format(algorithm, layer_index))
+    # print('---------------- Start Compression with {0} for layer {1}!) ----------------'.format(algorithm, layer_index))
 
-    if "Conv" not in type(model.layers[layer_index]).__name__ and \
-            "Dense" not in type(model.layers[layer_index]).__name__:
-        print('The selected layer is not Conv2D or FC layer')
-        exit(-1)
+    # if "Conv" not in type(model.layers[layer_index]).__name__ and \
+    #         "Dense" not in type(model.layers[layer_index]).__name__:
+    #     print('The selected layer is not Conv2D or FC layer')
+    #     exit(-1)
 
     weights = model.layers[layer_index].get_weights()
 
@@ -391,28 +391,30 @@ def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd') -> Model:
 
         if len(weights[j].shape) > 2:
             weights2d = weights[j].reshape([weights[j].shape[0], -1])
+        elif len(weights[j].shape) == 1:
+            continue
         else:
             weights2d = weights[j]
 
         u, s, vh = np.linalg.svd(weights2d, full_matrices=True)
 
-        k = len(s) - 1
+        k = sum(s > 0.1) - 1
 
-        # smat = np.zeros((k,k), s.dtype) # TODO why do we need it?
-        # smat[:k, :k] = np.diag(s[:k])
-        smat = np.diag(s[:k])  # truncation of the lowest singular value
-
+        smat = np.zeros((u.shape[-1], vh.shape[0]), s.dtype)
+        smat[:k, :k] = np.diag(s[:k])
 
         weights2d_truncated = np.dot(u, np.dot(smat, vh)) # TODO doesn't make sense, where do we save parameters?
                                                           # shouldn't
 
         if len(weights[j].shape) > 2:
             weights[j] = weights2d_truncated.reshape(weights[j].shape)
+        else:
+            weights[j] = weights2d_truncated
 
     model.layers[layer_index].set_weights(weights)
 
-    print('---------------- Done Compression with {0} for layer {1}!) ----------------'.format(algorithm, layer_index))
+    # print('---------------- Done Compression with {0} for layer {1}!) ----------------'.format(algorithm, layer_index))
 
-    return model
+    return model, k, len(s)
 
 

@@ -44,11 +44,11 @@ def train(model:tf.keras.models) -> tf.keras.models:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
-          '--architecture', type=str, default='mnist', help='Type of model: alexnet, vgg19, mnist ')
+          '--architecture', type=str, default='alexnet', help='Type of model: alexnet, vgg19, mnist ')
     parser.add_argument(
-          '--dataset', type=str, default='mnist', help='dataset name: mnist, cifar10 or cifar100 ')
+          '--dataset', type=str, default='cifar10', help='dataset name: mnist, cifar10 or cifar100 ')
     parser.add_argument(
-          '--train', default=False, help='Initial train')
+          '--train', default=True, help='Initial train')
     parser.add_argument(
           '--lra', default=True, help='Low Rank approximation')
     parser.add_argument(
@@ -87,6 +87,11 @@ if __name__ == '__main__':
         model = train(model)
     else:
         model = load_model('{0}/{0}_{1}_original.h5'.format(args.architecture, args.dataset))
+        opt = tf.keras.optimizers.Adam()
+        model.compile(
+            loss=tf.keras.losses.categorical_crossentropy,
+            optimizer=opt,
+            metrics=['accuracy'])
     if args.prune:  # prune model
         model = prune_weights(model)
     if args.lra:  # lra model using lra algo and our proposed framework

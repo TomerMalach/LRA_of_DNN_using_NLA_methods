@@ -1,11 +1,11 @@
 class config:
     batch_size = 32
-    epochs = 100
+    epochs = 2
     initial_learning_rate = 1e-3
     final_learning_rate = 1e-6
     lra_iterations = 100
     #kld_threshold = 0.1
-    accuracy_tolerance = 0.9
+    accuracy_tolerance = 0.05
     lra_model_path = 'lra_model'
 
     @staticmethod
