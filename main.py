@@ -48,7 +48,7 @@ if __name__ == '__main__':
     parser.add_argument(
           '--dataset', type=str, default='cifar10', help='dataset name: mnist, cifar10 or cifar100 ')
     parser.add_argument(
-          '--train', default=True, help='Initial train')
+          '--train', default=False, help='Initial train')
     parser.add_argument(
           '--lra', default=True, help='Low Rank approximation')
     parser.add_argument(
@@ -95,4 +95,5 @@ if __name__ == '__main__':
     if args.prune:  # prune model
         model = prune_weights(model)
     if args.lra:  # lra model using lra algo and our proposed framework
-        model = lra_framework(model, lra_algorithm=args.lra_algo, x_train=x_train, x_test=x_test, y_test=y_test)
+        model = lra_framework(model, lra_algorithm=args.lra_algo, x_train=x_train, x_test=x_test, y_test=y_test,
+                              dataset=args.dataset)

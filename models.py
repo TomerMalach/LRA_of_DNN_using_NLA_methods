@@ -41,7 +41,7 @@ def AlexNetModel(input_shape, num_classes):
 
     o = Dense(num_classes, activation='softmax')(o)
 
-    model = Model(inputs=x, outputs=o)
+    model = Model(inputs=x, outputs=o, name='alexnet')
 
     model.summary()
 
@@ -124,7 +124,7 @@ def VGG19Model(input_shape, num_classes):
 
     o = Dense(num_classes, activation='softmax')(o)
 
-    model = Model(inputs=x, outputs=o)
+    model = Model(inputs=x, outputs=o, name='vgg19')
 
     model.summary()
 

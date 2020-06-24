@@ -390,7 +390,7 @@ def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd') -> Model:
     for j in range(0, len(weights)):
 
         if len(weights[j].shape) > 2:
-            weights2d = weights[j].reshape([weights[j].shape[0], -1])
+            weights2d = weights[j].reshape([weights[j].shape[-1], -1])
         elif len(weights[j].shape) == 1:
             continue
         else:
@@ -398,13 +398,13 @@ def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd') -> Model:
 
         u, s, vh = np.linalg.svd(weights2d, full_matrices=True)
 
-        k = sum(s > 0.1) - 1
+        k = sum(s > 0.001) - 1
 
         smat = np.zeros((u.shape[-1], vh.shape[0]), s.dtype)
         smat[:k, :k] = np.diag(s[:k])
 
-        weights2d_truncated = np.dot(u, np.dot(smat, vh)) # TODO doesn't make sense, where do we save parameters?
-                                                          # shouldn't
+        weights2d_truncated = np.dot(u, np.dot(smat, vh))  # TODO doesn't make sense, where do we save parameters?
+
 
         if len(weights[j].shape) > 2:
             weights[j] = weights2d_truncated.reshape(weights[j].shape)

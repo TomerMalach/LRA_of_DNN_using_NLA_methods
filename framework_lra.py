@@ -4,7 +4,7 @@ from tensorflow.keras import Model
 from tensorflow.keras.models import save_model, clone_model
 from config import config as cfg
 from tensorflow.python.keras import backend as K
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Dense, Conv2D
 from tensorflow.keras.losses import KLD
 from scipy.special import softmax
 from compression import lra_per_layer
@@ -13,7 +13,7 @@ import os
 def kullback_leibler_divergence(y, x):
     return KLD(y, x).numpy()
 
-def get_relevant_layers(model, type_of_relevant_layers=[Dense]):
+def get_relevant_layers(model, type_of_relevant_layers=[Dense,Conv2D]):
     relevant_layers = []
     relevant_layers_index_in_model = []
     for i, layer in enumerate(model.layers):
@@ -56,12 +56,25 @@ def evaluate_kld_for_each_layer(model:Model, lra_model:Model, dataset):
     kld[kld < 0] = 0
     return kld
 
+def evaluate_kld_for_last_layer(model:Model, lra_model:Model, dataset):
+    # we dont need the labels because we only want P(y'|x;model) = P(y'|x; lra_model), we don't care if y' != y
 
-def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test):
+    model_layer_Dense_output_dist = model.predict(dataset)
+    lra_model_layer_Dense_output_dist = lra_model.predict(dataset)
+    # true is the first argument in kl_div
+    kld = kullback_leibler_divergence(y=model_layer_Dense_output_dist, x=lra_model_layer_Dense_output_dist)
+    # for kld_l in kld:
+    #     if any([kld_i < 0 for kld_i in kld_l]):
+    #         a  = 5
+    kld = np.mean(kld, axis=-1)
+    kld = 0 if kld < 0 else kld
+    return kld
+
+def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset):
     scores = []
 
     samples = x_train  # np.concatenate((x_train, x_test))
-    samples = samples[:5000]  # TODO for development only, delete when ready
+    samples = samples[:500]  # TODO for development only, delete when ready
 
     initial_score = model.evaluate(x_test, y_test, verbose=0)
 
@@ -90,14 +103,17 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test):
     while (initial_score[1] - score[1] < cfg.accuracy_tolerance):
         klds = []
         print("Start of Iteration {0}:".format(it))
-        for layer_index in relevant_layers_index_in_model:
+        for i,layer_index in enumerate(relevant_layers_index_in_model):
             temp_model.set_weights(lra_model.get_weights())
 
             temp_model, _, _ = lra_per_layer(temp_model, layer_index=layer_index, algorithm=lra_algorithm)
 
-            kld_per_layer = evaluate_kld_for_each_layer(model, temp_model, samples)
-            print('{0}: KLD per layer {1} - sum {2}'.format(layer_index, kld_per_layer, sum(kld_per_layer)))
-            klds.append(sum(kld_per_layer))
+            # kld_per_layer = evaluate_kld_for_each_layer(model, temp_model, samples)
+            kld_per_layer = evaluate_kld_for_last_layer(model, temp_model, samples)
+
+            print('{0} ({1}): KLD per layer {2}'.format(relevant_layers[i].name, layer_index, kld_per_layer))
+            # klds.append(sum(kld_per_layer))
+            klds.append(kld_per_layer)
 
         min_kld_index = np.argmin(klds)
 
@@ -124,9 +140,7 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test):
 
         it += 1
 
-    save_model_path = os.path.join(model.name, cfg.lra_model_path)
-    if not os.path.exists(save_model_path):
-        os.makedirs(save_model_path)
+    save_model_path = os.path.join(model.name, '{0}_{1}_lra.h5'.format(model.name, dataset))
     print('Saving model to: ', save_model_path)
-    save_model(model, save_model_path, include_optimizer=False)
+    save_model(lra_model, save_model_path, include_optimizer=False, save_format='h5')
 

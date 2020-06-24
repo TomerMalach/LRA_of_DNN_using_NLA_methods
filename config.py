@@ -6,7 +6,7 @@ class config:
     lra_iterations = 100
     #kld_threshold = 0.1
     accuracy_tolerance = 0.05
-    lra_model_path = 'lra_model'
+    lra_model_path = 'lra_model.h5'
 
     @staticmethod
     def learning_rate_scheduler(e):
