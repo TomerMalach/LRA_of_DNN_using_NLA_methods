@@ -3,7 +3,7 @@ import numpy as np
 import sys
 from matplotlib import pyplot as plt
 from logger_utils import get_logger
-
+from functools import reduce
 
 def check_sparsity(model):
 
@@ -378,8 +378,67 @@ def plot_weights_histogram(model):
     plt.show()
 
 
-def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd'):
-    assert layer_index < len(model.layers), 'ERROR lra_per_layer: given layer index is out of bounds'
+
+svd_memory = {}
+curr_num_of_params = {}
+
+
+def svd(model: Model, layer_index=0, update_memory=False):
+    weights = model.layers[layer_index].get_weights()
+    num_of_params = 0
+    for j in range(0, len(weights)):
+
+        if len(weights[j].shape) > 2:
+            weights2d = np.zeros_like(weights[j].reshape([weights[j].shape[-1], -1]))
+            for kernel in range(0, weights[j].shape[-1]):
+                weights2d[kernel, :] = weights[j][:, :, :, kernel].reshape([1, -1])
+            # weights2d = weights[j].reshape([weights[j].shape[-1], -1])
+        elif len(weights[j].shape) == 1:
+            num_of_params += weights[j].shape[0]
+            continue
+        else:
+            weights2d = weights[j]
+
+        if layer_index not in svd_memory.keys():
+            u, s, vh = np.linalg.svd(weights2d, full_matrices=True)
+            svd_memory[layer_index] = (u, s, vh)
+            tmp = 0
+            for weight in weights:
+                tmp += reduce(lambda x1, x2: x1 * x2, np.shape(weight))
+            curr_num_of_params[layer_index] = tmp
+        else:
+            u, s, vh = svd_memory[layer_index]
+
+        k = sum(s > 0.001)
+        (m, n) = np.shape(weights2d)
+        num_of_params += (m + n) * k
+        k -= np.ceil(len(s) * 0.005)
+        k = np.clip(int(k), a_min=0, a_max=len(s))
+
+        if update_memory:
+            s_update = s
+            s_update[k:] = 0
+            svd_memory[layer_index] = (u, s_update, vh)
+            if num_of_params < curr_num_of_params[layer_index]:
+                curr_num_of_params[layer_index] = num_of_params
+
+        smat = np.zeros((u.shape[-1], vh.shape[0]), s.dtype)
+        smat[:k, :k] = np.diag(s[:k])
+
+        weights2d_truncated = np.dot(u, np.dot(smat, vh))
+        if len(weights[j].shape) > 2:
+            for kernel in range(0, weights[j].shape[-1]):
+                weights[j][:,:,:, kernel] = weights2d[kernel, :].reshape(np.shape(weights[j][:,:,:, kernel]))
+            # weights[j] = weights2d_truncated.reshape(weights[j].shape)
+        else:
+            weights[j] = weights2d_truncated
+
+    model.layers[layer_index].set_weights(weights)
+
+    return model, k, len(s), curr_num_of_params[layer_index]
+
+
+def rrqr(model, layer_index):
     weights = model.layers[layer_index].get_weights()
     num_of_params = 0
     for j in range(0, len(weights)):
@@ -392,28 +451,13 @@ def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd'):
         else:
             weights2d = weights[j]
 
-        u, s, vh = np.linalg.svd(weights2d, full_matrices=True)
-
-        k = sum(s > 0.001)
-        (m, n) = np.shape(weights2d)
-        num_of_params += (m + n) * k
-        k -= np.ceil(len(s) * 0.01)
-        k = np.clip(int(k), a_min=0, a_max=len(s))
-
-
-        smat = np.zeros((u.shape[-1], vh.shape[0]), s.dtype)
-        smat[:k, :k] = np.diag(s[:k])
-
-        weights2d_truncated = np.dot(u, np.dot(smat, vh))  # TODO doesn't make sense, where do we save parameters?
-        if len(weights[j].shape) > 2:
-            weights[j] = weights2d_truncated.reshape(weights[j].shape)
-        else:
-            weights[j] = weights2d_truncated
-
-    model.layers[layer_index].set_weights(weights)
-
-    # print('---------------- Done Compression with {0} for layer {1}!) ----------------'.format(algorithm, layer_index))
-
     return model, k, len(s), num_of_params
 
+
+def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd', update_memory=False):
+    assert layer_index < len(model.layers), 'ERROR lra_per_layer: given layer index is out of bounds'
+    if 'tsvd' in algorithm:
+        return svd(model, layer_index, update_memory)
+    elif 'rrqr' in algorithm:
+        return rrqr(model, layer_index)
 

@@ -10,6 +10,15 @@ def plot_score_versus_compression(save_dir, score_data, compression_data):
     plt.title('score as a function of SVD-compression')
     plt.grid()
     plt.show()
+    fig.savefig('{0}/SVD_compression_vs_score_{0}_scaled.png'.format(save_dir))
+    fig = plt.figure()
+    plt.plot(compression_data, score_data, marker='o', color='b')
+    plt.xlabel('compression')
+    plt.ylabel('score')
+    plt.title('score as a function of SVD-compression')
+    plt.ylim(0,1)
+    plt.grid()
+    plt.show()
     fig.savefig('{0}/SVD_compression_vs_score_{0}.png'.format(save_dir))
 
 

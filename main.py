@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 import tempfile
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
-from compression import prune_weights
+from compression import prune_weights, check_sparsity
 import models
 import os
 from config import config as cfg
@@ -43,9 +43,11 @@ def train(model:tf.keras.models) -> tf.keras.models:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
-          '--architecture', type=str, default='alexnet', help='Type of model: alexnet, vgg19, mnist ')
+          '--arch', type=str, default='alexnet', help='Type of model: alexnet, vgg19, mnist ')
     parser.add_argument(
           '--dataset', type=str, default='cifar10', help='dataset name: mnist, cifar10 or cifar100 ')
+    parser.add_argument(
+          '--path', type=str, help='path to model ')
     parser.add_argument(
           '--train', default=False, help='Initial train')
     parser.add_argument(
@@ -71,28 +73,33 @@ if __name__ == '__main__':
         num_classes = 100
         (x_train, y_train), (x_test, y_test), input_shape = datasets.get_cifar100((img_rows, img_cols, img_channels))
     # Get model
-    if args.architecture == 'alexnet':
+    if args.arch == 'alexnet':
         model = models.AlexNetModel(input_shape, num_classes)
-    elif args.architecture == 'vgg19':
+    elif args.arch == 'vgg19':
         model = models.VGG19Model(input_shape, num_classes)
     else:
         model = models.MnistDense(input_shape, num_classes)
-    model_dir = r'{}'.format(args.architecture)
+    model_dir = r'{}'.format(args.arch)
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
     if args.plot_model:  # plot model
-        tf.keras.utils.plot_model(model, to_file='{0}/{0}_{1}_original.png'.format(args.architecture, args.dataset))
+        tf.keras.utils.plot_model(model, to_file='{0}/{0}_{1}_original.png'.format(args.arch, args.dataset))
     if args.train:  # train model
         model = train(model)
+    elif args.path is not None:
+        model = load_model(args.path)
     else:
-        model = load_model('{0}/{0}_{1}_original.h5'.format(args.architecture, args.dataset))
-        opt = tf.keras.optimizers.Adam()
-        model.compile(
-            loss=tf.keras.losses.categorical_crossentropy,
-            optimizer=opt,
-            metrics=['accuracy'])
+        model = load_model('{0}/{0}_{1}_original.h5'.format(args.arch, args.dataset))
+    opt = tf.keras.optimizers.Adam()
+    model.compile(
+        loss=tf.keras.losses.categorical_crossentropy,
+        optimizer=opt,
+        metrics=['accuracy'])
     if args.prune:  # prune model
-        model = prune_weights(model)
+        # check_sparsity(model)
+        # model = prune_weights(model)
+        check_sparsity(model)
+        args.arch += '_pruned'  # TODO add ratio of pruning for various models
     if args.lra:  # lra model using lra algo and our proposed framework
         model = lra_framework(model, lra_algorithm=args.lra_algo, x_train=x_train, x_test=x_test, y_test=y_test,
-                              dataset=args.dataset, model_name=args.architecture)
+                              dataset=args.dataset, model_name=args.arch)

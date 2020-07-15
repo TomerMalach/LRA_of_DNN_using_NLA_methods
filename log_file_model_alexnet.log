@@ -1,1 +1,28 @@
-2020-07-15 10:42:04,991  - INFO     - Start of Iteration 0:
+2020-07-15 15:25:24,903  - INFO     - Start of Iteration 0:
+2020-07-15 15:26:05,675  - INFO     - Compression ratio : 0.0.  number of params:  	 lra_model 24,347,018 	 initial model 24,347,018
+2020-07-15 15:26:05,677  - INFO     - Approximate conv2d 1 using 74/75 singular values
+2020-07-15 15:26:10,662  - INFO     - End of Iteration 0:
+test loss = 1.152
+test accuracy = 0.782
+
+
+
+2020-07-15 15:26:10,662  - INFO     - Start of Iteration 1:
+2020-07-15 15:26:16,032  - INFO     - Compression ratio : 0.0.  number of params:  	 lra_model 24,347,018 	 initial model 24,347,018
+2020-07-15 15:26:16,033  - INFO     - Approximate conv2d 1 using 73/75 singular values
+2020-07-15 15:26:20,602  - INFO     - End of Iteration 1:
+test loss = 1.152
+test accuracy = 0.782
+
+
+
+2020-07-15 15:26:20,602  - INFO     - Start of Iteration 2:
+2020-07-15 15:26:25,783  - INFO     - Compression ratio : 0.0.  number of params:  	 lra_model 24,347,018 	 initial model 24,347,018
+2020-07-15 15:26:25,784  - INFO     - Approximate conv2d 1 using 72/75 singular values
+2020-07-15 15:26:30,184  - INFO     - End of Iteration 2:
+test loss = 1.152
+test accuracy = 0.782
+
+
+
+2020-07-15 15:26:30,184  - INFO     - Start of Iteration 3:

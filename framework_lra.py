@@ -29,9 +29,9 @@ def evaluate_condition_number_for_each_layer(model:Model):
             cond_num.append(cond(weights2d))
     return cond_num
 
-def get_initial_number_of_params(model:Model):
+def get_initial_number_of_params(layers):
     num_of_params = 0
-    for layer in model.layers:
+    for layer in layers:
         weights = layer.get_weights()
         for weight in weights:
             num_of_params += reduce(lambda x1, x2: x1 * x2, np.shape(weight))
@@ -86,9 +86,9 @@ def evaluate_kld_for_each_layer(model:Model, lra_model:Model, dataset):
 
 def evaluate_kld_for_last_layer(model:Model, lra_model:Model, dataset):
     # we dont need the labels because we only want P(y'|x;model) = P(y'|x; lra_model), we don't care if y' != y
-
-    model_layer_Dense_output_dist = model.predict(dataset)
-    lra_model_layer_Dense_output_dist = lra_model.predict(dataset)
+    sampled_dataset = dataset[np.random.choice(range(len(dataset)), size=500, replace=False), :]
+    model_layer_Dense_output_dist = model.predict(sampled_dataset)
+    lra_model_layer_Dense_output_dist = lra_model.predict(sampled_dataset)
     # true is the first argument in kl_div
     kld = kullback_leibler_divergence(y=model_layer_Dense_output_dist, x=lra_model_layer_Dense_output_dist)
     # for kld_l in kld:
@@ -100,12 +100,14 @@ def evaluate_kld_for_last_layer(model:Model, lra_model:Model, dataset):
 
 def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset, model_name):
     scores = []
-    logger = get_logger('log_file_model_{}'.format(model_name))
-    samples = x_train  # np.concatenate((x_train, x_test))
-    samples = samples[:500]  # TODO for development only, delete when ready
+    logger_path = 'log_file_model_{}'.format(model_name)
+    if os.path.exists(logger_path + ".log"):
+        os.remove(logger_path + ".log")
+    logger = get_logger(logger_path)
+    samples = x_train  # np.concatennum_of_paramsate((x_train, x_test))
 
     initial_score = model.evaluate(x_test, y_test, verbose=0)
-    initial_num_of_params = get_initial_number_of_params(model)
+
 
     score = np.copy(initial_score)
 
@@ -131,7 +133,7 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset,
         metrics=['accuracy'])
 
     relevant_layers, relevant_layers_index_in_model = get_relevant_layers(model)
-
+    initial_num_of_params = get_initial_number_of_params(relevant_layers)
     print('\n\n')
     it = 0
 
@@ -143,15 +145,20 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset,
         for i, layer_index in enumerate(relevant_layers_index_in_model):
             temp_model.set_weights(lra_model.get_weights())
 
-            temp_model, _, _, num_of_params_layer_i = lra_per_layer(temp_model, layer_index=layer_index, algorithm=lra_algorithm)
+            temp_model, _, _, num_of_params_layer_i = lra_per_layer(temp_model, layer_index=layer_index,
+                                                                    algorithm=lra_algorithm, update_memory=False)
             curr_num_of_params += num_of_params_layer_i
             # kld_per_layer = evaluate_kld_for_each_layer(model, temp_model, samples)
             kld_per_layer = evaluate_kld_for_last_layer(model, temp_model, samples)
 
-            print('{0} ({1}): KLD per layer {2}'.format(relevant_layers[i].name, layer_index, kld_per_layer))
+            print('{} ({}): KLD per layer {:.4f}'.format(relevant_layers[i].name, layer_index, kld_per_layer))
             # klds.append(sum(kld_per_layer))
             klds.append(kld_per_layer)
 
+        print("Compression ratio : {}. \n number of params: \n \t lra_model {:,} \n \t initial model {:,}"
+              .format(1 - curr_num_of_params / initial_num_of_params, curr_num_of_params, initial_num_of_params))
+        logger.info("Compression ratio : {}.  number of params:  \t lra_model {:,} \t initial model {:,}"
+              .format(1 - curr_num_of_params / initial_num_of_params, curr_num_of_params, initial_num_of_params))
 
         if curr_num_of_params < initial_num_of_params:
             score_to_plot.append(score[-1])
@@ -164,7 +171,7 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset,
         # print('---------------- Start Compression with {0} for layer {1}!) ----------------'.format(lra_algorithm,
         #                                                                                             layer_with_min_kld.name))
         lra_model, truncated, full_svs, _ = lra_per_layer(lra_model, layer_index=layer_index_in_model_with_min_kld,
-                                                   algorithm=lra_algorithm)
+                                                   algorithm=lra_algorithm, update_memory=True)
         print('Approximate {0} {1} using {2}/{3} singular values'.format(layer_with_min_kld.name,
                                                                          layer_index_in_model_with_min_kld,
                                                                          truncated, full_svs))
@@ -178,15 +185,15 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset,
         score = lra_model.evaluate(x_test, y_test, verbose=0)
 
         scores.append(score)
-        print("End of Iteration {0}:\ntest loss = {1}\ntest accuracy = {2}\n\n\n".format(it,  score[0], score[1]))
-        logger.info("End of Iteration {0}:\ntest loss = {1}\ntest accuracy = {2}\n\n\n".format(it,  score[0], score[1]))
+        print("End of Iteration {}:\ntest loss = {:.3f}\ntest accuracy = {:.3f}\n\n\n".format(it,  score[0], score[1]))
+        logger.info("End of Iteration {}:\ntest loss = {:.3f}\ntest accuracy = {:.3f}\n\n\n".format(it,  score[0], score[1]))
         it += 1
 
     if not os.path.exists(model_name):
         os.makedirs(model_name)
     save_model_path = os.path.join(model_name, '{0}_{1}_lra.h5'.format(model_name, dataset))
     print('Saving model to: ', save_model_path)
-    logger.info('Saving model to: ', save_model_path)
+    logger.info('Saving model to:  {}'.format(save_model_path))
     save_model(lra_model, save_model_path, include_optimizer=False, save_format='h5')
     score_to_plot = np.asarray(score_to_plot)
     compression_ratio_to_plot = np.asarray(compression_ratio_to_plot)

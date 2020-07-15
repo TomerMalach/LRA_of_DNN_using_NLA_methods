@@ -4,3 +4,4 @@ mnist
 venv
 alexnet
 vgg19
+log_file_model_alexnet.log
