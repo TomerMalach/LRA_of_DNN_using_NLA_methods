@@ -2,6 +2,8 @@ from tensorflow.keras.models import Model
 import numpy as np
 import sys
 from matplotlib import pyplot as plt
+from logger_utils import get_logger
+
 
 def check_sparsity(model):
 
@@ -376,36 +378,33 @@ def plot_weights_histogram(model):
     plt.show()
 
 
-def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd') -> Model:
+def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd'):
     assert layer_index < len(model.layers), 'ERROR lra_per_layer: given layer index is out of bounds'
-    # print('---------------- Start Compression with {0} for layer {1}!) ----------------'.format(algorithm, layer_index))
-
-    # if "Conv" not in type(model.layers[layer_index]).__name__ and \
-    #         "Dense" not in type(model.layers[layer_index]).__name__:
-    #     print('The selected layer is not Conv2D or FC layer')
-    #     exit(-1)
-
     weights = model.layers[layer_index].get_weights()
-
+    num_of_params = 0
     for j in range(0, len(weights)):
 
         if len(weights[j].shape) > 2:
             weights2d = weights[j].reshape([weights[j].shape[-1], -1])
         elif len(weights[j].shape) == 1:
+            num_of_params += weights[j].shape[0]
             continue
         else:
             weights2d = weights[j]
 
         u, s, vh = np.linalg.svd(weights2d, full_matrices=True)
 
-        k = sum(s > 0.001) - 1
+        k = sum(s > 0.001)
+        (m, n) = np.shape(weights2d)
+        num_of_params += (m + n) * k
+        k -= np.ceil(len(s) * 0.01)
+        k = np.clip(int(k), a_min=0, a_max=len(s))
+
 
         smat = np.zeros((u.shape[-1], vh.shape[0]), s.dtype)
         smat[:k, :k] = np.diag(s[:k])
 
         weights2d_truncated = np.dot(u, np.dot(smat, vh))  # TODO doesn't make sense, where do we save parameters?
-
-
         if len(weights[j].shape) > 2:
             weights[j] = weights2d_truncated.reshape(weights[j].shape)
         else:
@@ -415,6 +414,6 @@ def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd') -> Model:
 
     # print('---------------- Done Compression with {0} for layer {1}!) ----------------'.format(algorithm, layer_index))
 
-    return model, k, len(s)
+    return model, k, len(s), num_of_params
 
 

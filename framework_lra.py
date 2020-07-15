@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.linalg import cond
 import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.models import save_model, clone_model
@@ -7,8 +8,35 @@ from tensorflow.python.keras import backend as K
 from tensorflow.keras.layers import Dense, Conv2D
 from tensorflow.keras.losses import KLD
 from scipy.special import softmax
+from functools import reduce
 from compression import lra_per_layer
 import os
+from plot_utils import *
+from logger_utils import get_logger
+
+
+def evaluate_condition_number_for_each_layer(model:Model):
+    cond_num = []
+    for layer in model.layers:
+        weights = layer.get_weights()
+        for weight in weights:
+            if len(weight.shape) > 2:
+                weights2d = weight.reshape([weight.shape[-1], -1])
+            elif len(weight.shape) == 1:
+                continue
+            else:
+                weights2d = weight
+            cond_num.append(cond(weights2d))
+    return cond_num
+
+def get_initial_number_of_params(model:Model):
+    num_of_params = 0
+    for layer in model.layers:
+        weights = layer.get_weights()
+        for weight in weights:
+            num_of_params += reduce(lambda x1, x2: x1 * x2, np.shape(weight))
+
+    return num_of_params
 
 def kullback_leibler_divergence(y, x):
     return KLD(y, x).numpy()
@@ -49,12 +77,12 @@ def evaluate_kld_for_each_layer(model:Model, lra_model:Model, dataset):
     lra_model_layer_Dense_output_dist = get_layer_outputs(lra_model, patches=dataset)
     # true is the first argument in kl_div
     kld = list(map(kullback_leibler_divergence, model_layer_Dense_output_dist, lra_model_layer_Dense_output_dist))
-    # for kld_l in kld:
-    #     if any([kld_i < 0 for kld_i in kld_l]):
-    #         a  = 5
     kld = np.mean(kld, axis=-1)
     kld[kld < 0] = 0
     return kld
+
+
+
 
 def evaluate_kld_for_last_layer(model:Model, lra_model:Model, dataset):
     # we dont need the labels because we only want P(y'|x;model) = P(y'|x; lra_model), we don't care if y' != y
@@ -70,15 +98,22 @@ def evaluate_kld_for_last_layer(model:Model, lra_model:Model, dataset):
     kld = 0 if kld < 0 else kld
     return kld
 
-def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset):
+def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset, model_name):
     scores = []
-
+    logger = get_logger('log_file_model_{}'.format(model_name))
     samples = x_train  # np.concatenate((x_train, x_test))
     samples = samples[:500]  # TODO for development only, delete when ready
 
     initial_score = model.evaluate(x_test, y_test, verbose=0)
+    initial_num_of_params = get_initial_number_of_params(model)
 
     score = np.copy(initial_score)
+
+    score_to_plot = []
+    compression_ratio_to_plot = []
+
+    score_to_plot.append(score[-1])
+    compression_ratio_to_plot.append(0)
 
     opt = tf.keras.optimizers.Adam()
 
@@ -98,16 +133,18 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset)
     relevant_layers, relevant_layers_index_in_model = get_relevant_layers(model)
 
     print('\n\n')
-
     it = 0
+
     while (initial_score[1] - score[1] < cfg.accuracy_tolerance):
         klds = []
         print("Start of Iteration {0}:".format(it))
-        for i,layer_index in enumerate(relevant_layers_index_in_model):
+        logger.info("Start of Iteration {0}:".format(it))
+        curr_num_of_params = 0
+        for i, layer_index in enumerate(relevant_layers_index_in_model):
             temp_model.set_weights(lra_model.get_weights())
 
-            temp_model, _, _ = lra_per_layer(temp_model, layer_index=layer_index, algorithm=lra_algorithm)
-
+            temp_model, _, _, num_of_params_layer_i = lra_per_layer(temp_model, layer_index=layer_index, algorithm=lra_algorithm)
+            curr_num_of_params += num_of_params_layer_i
             # kld_per_layer = evaluate_kld_for_each_layer(model, temp_model, samples)
             kld_per_layer = evaluate_kld_for_last_layer(model, temp_model, samples)
 
@@ -115,6 +152,10 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset)
             # klds.append(sum(kld_per_layer))
             klds.append(kld_per_layer)
 
+
+        if curr_num_of_params < initial_num_of_params:
+            score_to_plot.append(score[-1])
+            compression_ratio_to_plot.append(1 - curr_num_of_params / initial_num_of_params)  # so the graph will start from 0 and go to 1
         min_kld_index = np.argmin(klds)
 
         layer_with_min_kld = relevant_layers[min_kld_index]
@@ -122,11 +163,15 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset)
 
         # print('---------------- Start Compression with {0} for layer {1}!) ----------------'.format(lra_algorithm,
         #                                                                                             layer_with_min_kld.name))
-        lra_model, truncated, full_svs = lra_per_layer(lra_model, layer_index=layer_index_in_model_with_min_kld,
+        lra_model, truncated, full_svs, _ = lra_per_layer(lra_model, layer_index=layer_index_in_model_with_min_kld,
                                                    algorithm=lra_algorithm)
         print('Approximate {0} {1} using {2}/{3} singular values'.format(layer_with_min_kld.name,
                                                                          layer_index_in_model_with_min_kld,
                                                                          truncated, full_svs))
+        logger.info('Approximate {0} {1} using {2}/{3} singular values'.format(layer_with_min_kld.name,
+                                                                         layer_index_in_model_with_min_kld,
+                                                                         truncated, full_svs))
+
         # print('---------------- Done Compression with {0} for layer {1}!) ----------------'.format(lra_algorithm,
         #                                                                                            layer_with_min_kld.name))
 
@@ -134,13 +179,17 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset)
 
         scores.append(score)
         print("End of Iteration {0}:\ntest loss = {1}\ntest accuracy = {2}\n\n\n".format(it,  score[0], score[1]))
-        # if score[1] < cfg.accuracy_tolerance:
-        #     print("Iteration {}/{}: accuracy is lower than tolerance, ending lra".format(it, cfg.lra_iterations))
-        #     break
-
+        logger.info("End of Iteration {0}:\ntest loss = {1}\ntest accuracy = {2}\n\n\n".format(it,  score[0], score[1]))
         it += 1
 
-    save_model_path = os.path.join(model.name, '{0}_{1}_lra.h5'.format(model.name, dataset))
+    if not os.path.exists(model_name):
+        os.makedirs(model_name)
+    save_model_path = os.path.join(model_name, '{0}_{1}_lra.h5'.format(model_name, dataset))
     print('Saving model to: ', save_model_path)
+    logger.info('Saving model to: ', save_model_path)
     save_model(lra_model, save_model_path, include_optimizer=False, save_format='h5')
-
+    score_to_plot = np.asarray(score_to_plot)
+    compression_ratio_to_plot = np.asarray(compression_ratio_to_plot)
+    np.save(os.path.join(model_name, 'score_{}'.format(model_name)), score_to_plot)
+    np.save(os.path.join(model_name, 'compression_{}'.format(model_name)), compression_ratio_to_plot)
+    plot_score_versus_compression(save_dir=model_name, score_data=score_to_plot, compression_data=compression_ratio_to_plot)

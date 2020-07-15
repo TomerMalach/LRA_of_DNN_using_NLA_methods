@@ -2,7 +2,6 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 import tempfile
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
-import numpy as np
 from compression import prune_weights
 import models
 import os
@@ -96,4 +95,4 @@ if __name__ == '__main__':
         model = prune_weights(model)
     if args.lra:  # lra model using lra algo and our proposed framework
         model = lra_framework(model, lra_algorithm=args.lra_algo, x_train=x_train, x_test=x_test, y_test=y_test,
-                              dataset=args.dataset)
+                              dataset=args.dataset, model_name=args.architecture)
