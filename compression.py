@@ -3,6 +3,7 @@ import numpy as np
 import sys
 from matplotlib import pyplot as plt
 from logger_utils import get_logger
+from scipy.linalg import qr
 from functools import reduce
 
 def check_sparsity(model):
@@ -379,7 +380,7 @@ def plot_weights_histogram(model):
 
 
 
-svd_memory = {}
+lra_memory = {}
 curr_num_of_params = {}
 
 
@@ -399,26 +400,26 @@ def svd(model: Model, layer_index=0, update_memory=False):
         else:
             weights2d = weights[j]
 
-        if layer_index not in svd_memory.keys():
+        if layer_index not in lra_memory.keys():
             u, s, vh = np.linalg.svd(weights2d, full_matrices=True)
-            svd_memory[layer_index] = (u, s, vh)
+            lra_memory[layer_index] = (u, s, vh)
             tmp = 0
             for weight in weights:
                 tmp += reduce(lambda x1, x2: x1 * x2, np.shape(weight))
             curr_num_of_params[layer_index] = tmp
         else:
-            u, s, vh = svd_memory[layer_index]
+            u, s, vh = lra_memory[layer_index]
 
         k = sum(s > 0.001)
         (m, n) = np.shape(weights2d)
         num_of_params += (m + n) * k
-        k -= np.ceil(len(s) * 0.005)
+        k -= np.ceil(len(s) * 0.05)
         k = np.clip(int(k), a_min=0, a_max=len(s))
 
         if update_memory:
-            s_update = s
+            s_update = s.copy()
             s_update[k:] = 0
-            svd_memory[layer_index] = (u, s_update, vh)
+            lra_memory[layer_index] = (u, s_update, vh)
             if num_of_params < curr_num_of_params[layer_index]:
                 curr_num_of_params[layer_index] = num_of_params
 
@@ -428,7 +429,7 @@ def svd(model: Model, layer_index=0, update_memory=False):
         weights2d_truncated = np.dot(u, np.dot(smat, vh))
         if len(weights[j].shape) > 2:
             for kernel in range(0, weights[j].shape[-1]):
-                weights[j][:,:,:, kernel] = weights2d[kernel, :].reshape(np.shape(weights[j][:,:,:, kernel]))
+                weights[j][:,:,:, kernel] = weights2d_truncated[kernel, :].reshape(np.shape(weights[j][:,:,:, kernel]))
             # weights[j] = weights2d_truncated.reshape(weights[j].shape)
         else:
             weights[j] = weights2d_truncated
@@ -438,20 +439,69 @@ def svd(model: Model, layer_index=0, update_memory=False):
     return model, k, len(s), curr_num_of_params[layer_index]
 
 
-def rrqr(model, layer_index):
+def create_inverse_permutation_matrix(p):
+    permutation_mat = []
+    for n in p:
+        one_hot_vec = np.zeros(len(p))
+        one_hot_vec[n] = 1
+        permutation_mat.append(one_hot_vec)
+    permutation_mat = np.asarray(permutation_mat)
+    return permutation_mat
+
+def rrqr(model, layer_index, update_memory):
     weights = model.layers[layer_index].get_weights()
     num_of_params = 0
     for j in range(0, len(weights)):
 
         if len(weights[j].shape) > 2:
-            weights2d = weights[j].reshape([weights[j].shape[-1], -1])
+            weights2d = np.zeros_like(weights[j].reshape([weights[j].shape[-1], -1]))
+            for kernel in range(0, weights[j].shape[-1]):
+                weights2d[kernel, :] = weights[j][:, :, :, kernel].reshape([1, -1])
+            # weights2d = weights[j].reshape([weights[j].shape[-1], -1])
         elif len(weights[j].shape) == 1:
             num_of_params += weights[j].shape[0]
             continue
         else:
             weights2d = weights[j]
 
-    return model, k, len(s), num_of_params
+        if layer_index not in lra_memory.keys():
+            q, r, p = qr(weights2d, pivoting=True)
+            lra_memory[layer_index] = (q, r, p)
+            tmp = 0
+            for weight in weights:
+                tmp += reduce(lambda x1, x2: x1 * x2, np.shape(weight))
+            curr_num_of_params[layer_index] = tmp
+        else:
+            q, r, p = lra_memory[layer_index]
+
+        k = sum(np.sum(np.abs(r), axis=1) > 0.001)
+        k -= np.ceil(np.shape(r)[1] * 0.05)
+        k = np.int(k)
+        q_updated = q.copy()
+        r_updated = r.copy()
+        q_updated[:, k:] = 0
+        r_updated[k:, :] = 0
+        n = np.shape(r)[1]
+        num_of_params = np.shape(q)[0] * k + ((k + 1) / 2 + (n - k)) * k  # q r num of params
+        if update_memory:
+            lra_memory[layer_index] = (q_updated, r_updated, p)
+            if num_of_params < curr_num_of_params[layer_index]:
+                curr_num_of_params[layer_index] = num_of_params
+
+        permutation_inv = create_inverse_permutation_matrix(p)
+
+        weights2d_truncated = np.matmul(np.matmul(q_updated, r_updated), permutation_inv)
+        if len(weights[j].shape) > 2:
+            for kernel in range(0, weights[j].shape[-1]):
+                weights[j][:, :, :, kernel] = weights2d_truncated[kernel, :].reshape(np.shape(weights[j][:, :, :, kernel]))
+            # weights[j] = weights2d_truncated.reshape(weights[j].shape)
+        else:
+            weights[j] = weights2d_truncated
+
+
+    model.layers[layer_index].set_weights(weights)
+
+    return model, k, np.shape(r)[1], curr_num_of_params[layer_index]
 
 
 def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd', update_memory=False):
@@ -459,5 +509,5 @@ def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd', update_memory=Fa
     if 'tsvd' in algorithm:
         return svd(model, layer_index, update_memory)
     elif 'rrqr' in algorithm:
-        return rrqr(model, layer_index)
+        return rrqr(model, layer_index, update_memory)
 

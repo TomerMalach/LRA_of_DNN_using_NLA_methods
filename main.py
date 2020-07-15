@@ -57,7 +57,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--plot_model', default=False, help='plot model')
     parser.add_argument(
-        '--lra_algo', type=str, default='tsvd', help='lra algorithm')
+        '--lra_algo', type=str, default='rrqr', help='lra algorithm')
     args = parser.parse_args()
     # Get Dataset
     if args.dataset == 'mnist':

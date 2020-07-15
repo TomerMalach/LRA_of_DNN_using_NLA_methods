@@ -172,12 +172,20 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset,
         #                                                                                             layer_with_min_kld.name))
         lra_model, truncated, full_svs, _ = lra_per_layer(lra_model, layer_index=layer_index_in_model_with_min_kld,
                                                    algorithm=lra_algorithm, update_memory=True)
-        print('Approximate {0} {1} using {2}/{3} singular values'.format(layer_with_min_kld.name,
-                                                                         layer_index_in_model_with_min_kld,
-                                                                         truncated, full_svs))
-        logger.info('Approximate {0} {1} using {2}/{3} singular values'.format(layer_with_min_kld.name,
-                                                                         layer_index_in_model_with_min_kld,
-                                                                         truncated, full_svs))
+        if 'tsvd' in lra_algorithm:
+            print('Approximate {0} {1} using {2}/{3} singular values'.format(layer_with_min_kld.name,
+                                                                             layer_index_in_model_with_min_kld,
+                                                                             truncated, full_svs))
+            logger.info('Approximate {0} {1} using {2}/{3} singular values'.format(layer_with_min_kld.name,
+                                                                             layer_index_in_model_with_min_kld,
+                                                                             truncated, full_svs))
+        if 'rrqr' in lra_algorithm:
+            print('Approximate {0} {1} using {2}/{3} rank ratio '.format(layer_with_min_kld.name,
+                                                                             layer_index_in_model_with_min_kld,
+                                                                             truncated, full_svs))
+            logger.info('Approximate {0} {1} using {2}/{3} rank ratio'.format(layer_with_min_kld.name,
+                                                                                   layer_index_in_model_with_min_kld,
+                                                                                   truncated, full_svs))
 
         # print('---------------- Done Compression with {0} for layer {1}!) ----------------'.format(lra_algorithm,
         #                                                                                            layer_with_min_kld.name))
