@@ -2,24 +2,24 @@ from matplotlib import pyplot as plt
 import numpy as np
 
 
-def plot_score_versus_compression(save_dir, score_data, compression_data):
+def plot_score_versus_compression(save_dir, score_data, compression_data, model_name):
     fig = plt.figure()
     plt.plot(compression_data, score_data, marker='o', color='b')
     plt.xlabel('compression')
     plt.ylabel('score')
-    plt.title('score as a function of SVD-compression')
+    plt.title('{}'.format(model_name))
     plt.grid()
     plt.show()
-    fig.savefig('{0}/SVD_compression_vs_score_{0}_scaled.png'.format(save_dir))
-    fig = plt.figure()
-    plt.plot(compression_data, score_data, marker='o', color='b')
-    plt.xlabel('compression')
-    plt.ylabel('score')
-    plt.title('score as a function of SVD-compression')
-    plt.ylim(0,1)
-    plt.grid()
-    plt.show()
-    fig.savefig('{0}/SVD_compression_vs_score_{0}.png'.format(save_dir))
+    fig.savefig('{0}/SVD_compression_vs_score.png'.format(save_dir))
+    # fig = plt.figure()
+    # plt.plot(compression_data, score_data, marker='o', color='b')
+    # plt.xlabel('compression')
+    # plt.ylabel('score')
+    # plt.title('score as a function of SVD-compression')
+    # plt.ylim(0, 1)
+    # plt.grid()
+    # plt.show()
+    # fig.savefig('{0}/SVD_compression_vs_score_{0}.png'.format(save_dir))
 
 
 # def plot_compression_vs_score_and_vs_condition_number_increase(save_dir, score_data,

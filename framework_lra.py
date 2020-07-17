@@ -100,7 +100,11 @@ def evaluate_kld_for_last_layer(model:Model, lra_model:Model, dataset):
 
 def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset, model_name):
     scores = []
-    logger_path = 'log_file_model_{}'.format(model_name)
+    arch = model_name.split('_')[0]
+    dir = os.path.join(arch, model_name)
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    logger_path = os.path.join(dir, 'log_file_model_{}'.format(model_name))
     if os.path.exists(logger_path + ".log"):
         os.remove(logger_path + ".log")
     logger = get_logger(logger_path)
@@ -197,14 +201,13 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset,
         logger.info("End of Iteration {}:\ntest loss = {:.3f}\ntest accuracy = {:.3f}\n\n\n".format(it,  score[0], score[1]))
         it += 1
 
-    if not os.path.exists(model_name):
-        os.makedirs(model_name)
-    save_model_path = os.path.join(model_name, '{0}_{1}_lra.h5'.format(model_name, dataset))
+    save_model_path = os.path.join(dir, '{0}_{1}_lra.h5'.format(model_name, dataset))
     print('Saving model to: ', save_model_path)
     logger.info('Saving model to:  {}'.format(save_model_path))
     save_model(lra_model, save_model_path, include_optimizer=False, save_format='h5')
     score_to_plot = np.asarray(score_to_plot)
     compression_ratio_to_plot = np.asarray(compression_ratio_to_plot)
-    np.save(os.path.join(model_name, 'score_{}'.format(model_name)), score_to_plot)
-    np.save(os.path.join(model_name, 'compression_{}'.format(model_name)), compression_ratio_to_plot)
-    plot_score_versus_compression(save_dir=model_name, score_data=score_to_plot, compression_data=compression_ratio_to_plot)
+    np.save(os.path.join(dir, 'score_{}'.format(model_name)), score_to_plot)
+    np.save(os.path.join(dir, 'compression_{}'.format(model_name)), compression_ratio_to_plot)
+    plot_score_versus_compression(save_dir=dir, score_data=score_to_plot,
+                                  compression_data=compression_ratio_to_plot, model_name=model_name)

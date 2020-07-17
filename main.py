@@ -51,13 +51,9 @@ if __name__ == '__main__':
     parser.add_argument(
           '--train', default=False, help='Initial train')
     parser.add_argument(
-          '--lra', default=True, help='Low Rank approximation')
-    parser.add_argument(
-          '--prune', default=False, help='preform pruning before lra')
-    parser.add_argument(
         '--plot_model', default=False, help='plot model')
     parser.add_argument(
-        '--lra_algo', type=str, default='rrqr', help='lra algorithm')
+        '--lra_algo', type=str, default='tsvd', help='lra algorithm')
     args = parser.parse_args()
     # Get Dataset
     if args.dataset == 'mnist':
@@ -95,11 +91,12 @@ if __name__ == '__main__':
         loss=tf.keras.losses.categorical_crossentropy,
         optimizer=opt,
         metrics=['accuracy'])
-    if args.prune:  # prune model
-        # check_sparsity(model)
-        # model = prune_weights(model)
-        check_sparsity(model)
-        args.arch += '_pruned'  # TODO add ratio of pruning for various models
-    if args.lra:  # lra model using lra algo and our proposed framework
-        model = lra_framework(model, lra_algorithm=args.lra_algo, x_train=x_train, x_test=x_test, y_test=y_test,
-                              dataset=args.dataset, model_name=args.arch)
+    # if args.prune:  # prune model
+    #     # check_sparsity(model)
+    #     # model = prune_weights(model)
+    #     check_sparsity(model)
+    #     args.arch += '_pruned'  # TODO add ratio of pruning for various models
+    # if args.lra:  # lra model using lra algo and our proposed framework
+    model_name = os.path.basename(args.path)[:-3]
+    model = lra_framework(model, lra_algorithm=args.lra_algo, x_train=x_train, x_test=x_test, y_test=y_test,
+                          dataset=args.dataset, model_name=model_name)
