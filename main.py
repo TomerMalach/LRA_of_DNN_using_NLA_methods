@@ -2,7 +2,6 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 import tempfile
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
-from compression import prune_weights, check_sparsity
 import models
 import os
 from config import config as cfg
@@ -47,7 +46,7 @@ if __name__ == '__main__':
     parser.add_argument(
           '--dataset', type=str, default='cifar10', help='dataset name: mnist, cifar10 or cifar100 ')
     parser.add_argument(
-          '--path', type=str, help='path to model ')
+          '--path', type=str, default=r'alexnet/alexnet_cifar10_strip_pruned_90.h5', help='path to model ')
     parser.add_argument(
           '--train', default=False, help='Initial train')
     parser.add_argument(
