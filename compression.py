@@ -5,6 +5,8 @@ from matplotlib import pyplot as plt
 from logger_utils import get_logger
 from scipy.linalg import svd, qr, orth, norm
 from functools import reduce
+import time
+from sklearn import preprocessing
 
 def check_sparsity(model):
 
@@ -68,7 +70,7 @@ curr_num_of_params = {}  #  saves the num of params
 shapes_memory = {}
 
 
-def svd_per_layer(model: Model, layer_index=0, update_memory=False, martinson=None):
+def svd_per_layer(model: Model, layer_index=0, update_memory=False, martinson=False):
     weights = model.layers[layer_index].get_weights()
 
     total_params_per_layer = 0
@@ -94,26 +96,68 @@ def svd_per_layer(model: Model, layer_index=0, update_memory=False, martinson=No
             curr_num_of_params[(layer_index, j)] = n * m
             shapes_memory[(layer_index, j)] = (m, n)
 
-            # martinson randomization
-            if martinson:
-                for l in range(1, min(weights2d.shape)+1)[::-1]:
-                    ohm = np.random.randn(n, l)
-                    projW = np.matmul(weights2d, ohm)
-                    Q_temp = orth(projW)
-                    B_temp = np.matmul(Q_temp.T, weights2d)
-                    if norm(weights2d-np.matmul(Q_temp, B_temp)) > 0.5:
-                        break
-                    # print('l={0}  -  norm={1}'.format(l, norm(weights2d-np.matmul(Q, B))))
-                    B = B_temp
-                    Q = Q_temp
+            # martinsson randomization
+            if martinson or True: # or min(n, m) > 1000:
+                # before = time.time()
+
+                Q = np.zeros((m, n))
+                B = np.zeros((n, n))
+                initial_norm = norm(weights2d)
+                rnd_mat = np.random.randn(n, m)
+                rank = 0
+
+                while norm(weights2d) > 0.01*initial_norm and rank < min(m, n):
+                    # before = time.time()
+                    w = rnd_mat[:, rank]
+                    # print("\nrand time " + str(time.time() - before))
+
+                    # before = time.time()
+                    y = weights2d.dot(w)
+                    # print("\nmatmul time " + str(time.time() - before))
+
+                    # before = time.time()
+                    q = y/norm(y)
+                    # print("\nnorm time " + str(time.time() - before))
+
+                    # before = time.time()
+                    b = q.T.dot(weights2d)
+                    # print("\nb time " + str(time.time() - before))
+
+                    Q[:, rank] = q
+                    B[rank, :] = b
+                    # before = time.time()
+                    # if Q == []:
+                    #     Q = q
+                    #     B = b
+                    # else:
+                    #     Q = np.concatenate((Q, q), axis=1)
+                    #     B = np.concatenate((B, b), axis=0)
+                    # print("\nallocate time " + str(time.time() - before))
+                    weights2d = weights2d - np.matmul(np.expand_dims(q, 1), np.expand_dims(b, 0))
+                    rank += 1
+
+                # for l in range(1, min(weights2d.shape)+1)[::-1]:
+                #     ohm = np.random.randn(n, l)
+                #     projW = np.matmul(weights2d, ohm)
+                #     Q_temp = orth(projW)
+                #     B_temp = np.matmul(Q_temp.T, weights2d)
+                #     if norm(weights2d-np.matmul(Q_temp, B_temp)) > 0.5:
+                #         break
+                #     # print('l={0}  -  norm={1}'.format(l, norm(weights2d-np.matmul(Q, B))))
+                #     B = B_temp
+                #     Q = Q_temp
 
                 # calculating the svd
-                u, s, vh = svd(B, full_matrices=True)
-                u = np.matmul(Q, u)
+                u, s, vh = svd(B[0:rank, :], full_matrices=True)
+                u = np.matmul(Q[:, 0:rank], u)
+                # print("\nlayer {0} martinsson svd time ".format(model.layers[layer_index].name) + str(time.time() - before))
+
             else:
 
                 # calculating the svd
+                # before = time.time()
                 u, s, vh = svd(weights2d, full_matrices=True)
+                # print("\nlayer {0} svd time ".format(model.layers[layer_index].name) + str(time.time() - before))
 
             lra_memory[(layer_index, j)] = (u, s, vh)
 
@@ -227,7 +271,7 @@ def rrqr_per_layer(model, layer_index, update_memory):
 def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd', update_memory=False):
     assert layer_index < len(model.layers), 'ERROR lra_per_layer: given layer index is out of bounds'
     if 'tsvd' in algorithm:
-        return svd_per_layer(model, layer_index, update_memory, martinson=True)
+        return svd_per_layer(model, layer_index, update_memory)
     elif 'rrqr' in algorithm:
         return rrqr_per_layer(model, layer_index, update_memory)
 
