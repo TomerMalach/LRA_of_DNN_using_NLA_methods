@@ -3,7 +3,7 @@ import numpy as np
 import sys
 from matplotlib import pyplot as plt
 from logger_utils import get_logger
-from scipy.linalg import qr, orth
+from scipy.linalg import svd, qr, orth, norm
 from functools import reduce
 
 # def check_sparsity(model):
@@ -382,10 +382,10 @@ from functools import reduce
 
 lra_memory = {} # saves the decompositions
 curr_num_of_params = {}  #  saves the num of params
-weights_memory = {}
+shapes_memory = {}
 
 
-def svd(model: Model, layer_index=0, update_memory=False, martinson=None):
+def svd_per_layer(model: Model, layer_index=0, update_memory=False, martinson=None):
     weights = model.layers[layer_index].get_weights()
 
     total_params_per_layer = 0
@@ -409,24 +409,28 @@ def svd(model: Model, layer_index=0, update_memory=False, martinson=None):
             # initial num of params
             (m, n) = np.shape(weights2d)
             curr_num_of_params[(layer_index, j)] = n * m
+            shapes_memory[(layer_index, j)] = (m, n)
 
             # martinson randomization
             if martinson:
-                for l in range(1, min(weights2d.shape))[::-1]:
-                    ohm = np.random.randn(weights2d.shape[1], l)
+                for l in range(1, min(weights2d.shape)+1)[::-1]:
+                    ohm = np.random.randn(n, l)
                     projW = np.matmul(weights2d, ohm)
-                    Q = orth(projW)
-                    B = np.matmul(Q.T, weights2d)
-                    weights_memory[(layer_index, j)] = B
-                    # curr_num_of_params[(layer_index, j)]
-            else:
-                weights_memory[(layer_index, j)] = weights2d
+                    Q_temp = orth(projW)
+                    B_temp = np.matmul(Q_temp.T, weights2d)
+                    if norm(weights2d-np.matmul(Q_temp, B_temp)) > 0.5:
+                        break
+                    # print('l={0}  -  norm={1}'.format(l, norm(weights2d-np.matmul(Q, B))))
+                    B = B_temp
+                    Q = Q_temp
 
-            # calculating the svd
-            u, s, vh = np.linalg.svd(weights2d, full_matrices=True)
-
-            if martinson:
+                # calculating the svd
+                u, s, vh = svd(B, full_matrices=True)
                 u = np.matmul(Q, u)
+            else:
+
+                # calculating the svd
+                u, s, vh = svd(weights2d, full_matrices=True)
 
             lra_memory[(layer_index, j)] = (u, s, vh)
 
@@ -435,7 +439,7 @@ def svd(model: Model, layer_index=0, update_memory=False, martinson=None):
 
         # truncation process
         k = sum(s > 0.001)
-        (m, n) = np.shape(weights_memory[(layer_index, j)])
+        (m, n) = shapes_memory[(layer_index, j)]
         num_of_params = (m + n) * k
         k -= np.ceil(len(s) * 0.1)
         k = np.clip(int(k), a_min=0, a_max=len(s))
@@ -459,7 +463,6 @@ def svd(model: Model, layer_index=0, update_memory=False, martinson=None):
         else:
             weights[j] = weights2d_truncated
 
-
         total_params_per_layer += curr_num_of_params[(layer_index, j)]
 
     # update the true model if update memory if not update the temp model for testing\evaluation
@@ -478,7 +481,7 @@ def create_inverse_permutation_matrix(p):
     return permutation_mat
 
 
-def rrqr(model, layer_index, update_memory):
+def rrqr_per_layer(model, layer_index, update_memory):
     weights = model.layers[layer_index].get_weights()
     total_params_per_layer = 0
     for j in range(0, len(weights)):
@@ -541,7 +544,7 @@ def rrqr(model, layer_index, update_memory):
 def lra_per_layer(model:Model, layer_index=0, algorithm='tsvd', update_memory=False):
     assert layer_index < len(model.layers), 'ERROR lra_per_layer: given layer index is out of bounds'
     if 'tsvd' in algorithm:
-        return svd(model, layer_index, update_memory)
+        return svd_per_layer(model, layer_index, update_memory, martinson=True)
     elif 'rrqr' in algorithm:
-        return rrqr(model, layer_index, update_memory)
+        return rrqr_per_layer(model, layer_index, update_memory)
 
