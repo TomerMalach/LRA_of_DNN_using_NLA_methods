@@ -3,7 +3,7 @@ import numpy as np
 import sys
 from matplotlib import pyplot as plt
 from logger_utils import get_logger
-from scipy.linalg import qr
+from scipy.linalg import qr, orth
 from functools import reduce
 
 def check_sparsity(model):
@@ -380,63 +380,92 @@ def plot_weights_histogram(model):
 
 
 
-lra_memory = {}
-curr_num_of_params = {}
+lra_memory = {} # saves the decompositions
+curr_num_of_params = {}  #  saves the num of params
+weights_memory = {}
 
 
-def svd(model: Model, layer_index=0, update_memory=False):
+def svd(model: Model, layer_index=0, update_memory=False, martinson=None):
     weights = model.layers[layer_index].get_weights()
-    num_of_params = 0
+
+    total_params_per_layer = 0
+    k = 0
+    s = 0
     for j in range(0, len(weights)):
 
-        if len(weights[j].shape) > 2:
-            weights2d = np.zeros_like(weights[j].reshape([weights[j].shape[-1], -1]))
-            for kernel in range(0, weights[j].shape[-1]):
-                weights2d[kernel, :] = weights[j][:, :, :, kernel].reshape([1, -1])
-            # weights2d = weights[j].reshape([weights[j].shape[-1], -1])
-        elif len(weights[j].shape) == 1:
-            num_of_params += weights[j].shape[0]
+        if len(weights[j].shape) == 1:
+            total_params_per_layer += weights[j].shape[0]
             continue
-        else:
-            weights2d = weights[j]
 
+        # initialize the memory with recurring data
         if layer_index not in lra_memory.keys():
-            u, s, vh = np.linalg.svd(weights2d, full_matrices=True)
-            lra_memory[layer_index] = (u, s, vh)
-            tmp = 0
-            for weight in weights:
-                tmp += reduce(lambda x1, x2: x1 * x2, np.shape(weight))
-            curr_num_of_params[layer_index] = tmp
-        else:
-            u, s, vh = lra_memory[layer_index]
+            if len(weights[j].shape) > 2:
+                weights2d = np.zeros_like(weights[j].reshape([weights[j].shape[-1], -1]))
+                for kernel in range(0, weights[j].shape[-1]):
+                    weights2d[kernel, :] = weights[j][:, :, :, kernel].reshape([1, -1])
+            else:
+                weights2d = weights[j]
 
+            # initial num of params
+            (m, n) = np.shape(weights2d)
+            curr_num_of_params[(layer_index, j)] = n * m
+
+            # martinson randomization
+            if martinson:
+                for l in range(1, min(weights2d.shape))[::-1]:
+                    ohm = np.random.randn(weights2d.shape[1], l)
+                    projW = np.matmul(weights2d, ohm)
+                    Q = orth(projW)
+                    B = np.matmul(Q.T, weights2d)
+                    weights_memory[(layer_index, j)] = B
+                    # curr_num_of_params[(layer_index, j)]
+            else:
+                weights_memory[(layer_index, j)] = weights2d
+
+            # calculating the svd
+            u, s, vh = np.linalg.svd(weights2d, full_matrices=True)
+
+            if martinson:
+                u = np.matmul(Q, u)
+
+            lra_memory[(layer_index, j)] = (u, s, vh)
+
+        else:  # loading recurring data
+            u, s, vh = lra_memory[(layer_index, j)]
+
+        # truncation process
         k = sum(s > 0.001)
-        (m, n) = np.shape(weights2d)
-        num_of_params += (m + n) * k
-        k -= np.ceil(len(s) * 0.05)
+        (m, n) = np.shape(weights_memory[(layer_index, j)])
+        num_of_params = (m + n) * k
+        k -= np.ceil(len(s) * 0.005)
         k = np.clip(int(k), a_min=0, a_max=len(s))
 
+        # only when when the change is real and not test
         if update_memory:
             s_update = s.copy()
             s_update[k:] = 0
-            lra_memory[layer_index] = (u, s_update, vh)
-            if num_of_params < curr_num_of_params[layer_index]:
-                curr_num_of_params[layer_index] = num_of_params
+            lra_memory[(layer_index, j)] = (u, s_update, vh)
+            if num_of_params < curr_num_of_params[(layer_index, j)]:
+                curr_num_of_params[(layer_index, j)] = num_of_params
 
+        #  inverse transformation
         smat = np.zeros((u.shape[-1], vh.shape[0]), s.dtype)
         smat[:k, :k] = np.diag(s[:k])
-
         weights2d_truncated = np.dot(u, np.dot(smat, vh))
         if len(weights[j].shape) > 2:
             for kernel in range(0, weights[j].shape[-1]):
-                weights[j][:,:,:, kernel] = weights2d_truncated[kernel, :].reshape(np.shape(weights[j][:,:,:, kernel]))
-            # weights[j] = weights2d_truncated.reshape(weights[j].shape)
+                weights[j][:, :, :, kernel] = \
+                    weights2d_truncated[kernel, :].reshape(np.shape(weights[j][:, :, :, kernel]))
         else:
             weights[j] = weights2d_truncated
 
+
+        total_params_per_layer += curr_num_of_params[(layer_index, j)]
+
+    # update the true model if update memory if not update the temp model for testing\evaluation
     model.layers[layer_index].set_weights(weights)
 
-    return model, k, len(s), curr_num_of_params[layer_index]
+    return model, k, len(s), total_params_per_layer
 
 
 def create_inverse_permutation_matrix(p):
@@ -475,12 +504,12 @@ def rrqr(model, layer_index, update_memory):
             q, r, p = lra_memory[layer_index]
 
         k = sum(np.sum(np.abs(r), axis=1) > 0.001)
-        k -= np.ceil(np.shape(r)[1] * 0.05)
-        k = np.int(k)
+        k -= np.floor(np.shape(r)[1]) * 0.01
+        k = np.clip(int(k), a_min=0, a_max=np.shape(r)[1])
         q_updated = q.copy()
         r_updated = r.copy()
-        q_updated[:, k:] = 0
-        r_updated[k:, :] = 0
+        q_updated[:, k:] = 0  # eliminate silent columns
+        r_updated[k:, :] = 0  # eliminate rows
         n = np.shape(r)[1]
         num_of_params = np.shape(q)[0] * k + ((k + 1) / 2 + (n - k)) * k  # q r num of params
         if update_memory:

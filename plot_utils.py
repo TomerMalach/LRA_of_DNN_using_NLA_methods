@@ -2,15 +2,16 @@ from matplotlib import pyplot as plt
 import numpy as np
 
 
-def plot_score_versus_compression(save_dir, score_data, compression_data, model_name):
+def plot_score_versus_compression(save_dir, score_data, compression_data, model_name, algo):
     fig = plt.figure()
     plt.plot(compression_data, score_data, marker='o', color='b')
     plt.xlabel('compression')
     plt.ylabel('score')
-    plt.title('{}'.format(model_name))
+    plt.title('{} '.format(model_name))
     plt.grid()
-    plt.show()
-    fig.savefig('{0}/SVD_compression_vs_score.png'.format(save_dir))
+    plt.legend(["{}".format(algo), ])
+    # plt.show()
+    fig.savefig('{}/{}_compression_vs_score.png'.format(save_dir, algo))
     # fig = plt.figure()
     # plt.plot(compression_data, score_data, marker='o', color='b')
     # plt.xlabel('compression')

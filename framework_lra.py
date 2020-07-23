@@ -145,6 +145,7 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset,
         klds = []
         print("Start of Iteration {0}:".format(it))
         logger.info("Start of Iteration {0}:".format(it))
+
         curr_num_of_params = 0
         for i, layer_index in enumerate(relevant_layers_index_in_model):
             temp_model.set_weights(lra_model.get_weights())
@@ -210,4 +211,4 @@ def lra_framework(model: Model, lra_algorithm, x_train, x_test, y_test, dataset,
     np.save(os.path.join(dir, 'score_{}'.format(model_name)), score_to_plot)
     np.save(os.path.join(dir, 'compression_{}'.format(model_name)), compression_ratio_to_plot)
     plot_score_versus_compression(save_dir=dir, score_data=score_to_plot,
-                                  compression_data=compression_ratio_to_plot, model_name=model_name)
+                                  compression_data=compression_ratio_to_plot, model_name=model_name, algo=lra_algorithm)
